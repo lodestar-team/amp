@@ -1,148 +1,117 @@
-# Amp
+# amp (cargopete fork)
 
-The blockchain native database.
+A self-built fork of [Amp](https://thegraph.com/) — the blockchain-native
+database — maintained so that [engine.camp](https://engine.camp) builds and runs
+its indexing engine from source rather than from a prebuilt binary.
 
-## Installation
+> **What this is.** This repository is an independent fork of Edge & Node
+> Ventures' Amp, taken at commit `a1937bf` (2025-12-12). It is **not affiliated
+> with, sponsored by, or endorsed by Edge & Node Ventures or The Graph.** "Amp"
+> is their name; the executables here keep the names `ampd`/`ampctl`/`ampsync`
+> for drop-in compatibility, but this is the *cargopete fork*, versioned
+> independently (see [Versioning](#versioning)). The Licensed Work remains under
+> the Business Source License 1.1 — see [License](#license).
 
-The easiest way to install Amp is using `ampup`, the official version manager and installer:
+## Why this fork exists
 
-```sh
-# Install ampup
-curl --proto '=https' --tlsv1.2 -sSf https://ampup.sh/install | sh
-```
+camp serves a free, no-key public REST/SQL API over an Arbitrum One Amp indexer.
+Running a prebuilt `ampd` we don't compile means we can't see, pin, or patch what
+we're actually running. This fork gives us:
 
-This will install `ampup` and the latest version of `ampd` and `ampctl`. You may need to restart your terminal or run `source ~/.zshenv` (or your shell's equivalent) to update your PATH.
+- **Provenance** — the binary self-reports its exact commit (`ampd --version`),
+  built by us from source we can read.
+- **Control** — the option to patch the engine for camp's needs (e.g. a future
+  HyperSync extractor) in clearly-isolated crates.
+- **A clean legal footing** — BUSL-1.1's Additional Use Grant permits camp's
+  free, non-competitive production use (see [License](#license)).
 
-Once installed, you can manage `ampd` and `ampctl` versions:
+This is a **frozen Dec-2025 snapshot** (a depth-1 clone, no upstream history).
+The upstream source repository is no longer public at its former URL, so this
+fork does not currently track an upstream branch.
 
-```sh
-# Install or update to the latest version
-ampup install
+## Build from source
 
-# Switch between installed versions
-ampup use v0.1.0
-
-# Build from source (main branch)
-ampup build
-
-# Build from a specific PR or branch
-ampup build --pr 123
-ampup build --branch develop
-```
-
-For more details and advanced options, see the [ampup README](ampup/README.md).
-
-### Installation via Nix
-
-For Nix users, `ampd` is available as a flake:
-
-```sh
-# Run directly without installing
-nix run github:edgeandnode/amp
-
-# Install to your profile
-nix profile install github:edgeandnode/amp
-
-# Try it out temporarily
-nix shell github:edgeandnode/amp -c ampd --version
-```
-
-You can also add it to your NixOS or home-manager configuration:
-
-```nix
-{
-  inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
-    amp = {
-      url = "github:edgeandnode/amp";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-  };
-
-  outputs = { nixpkgs, amp, ... }: {
-    # NixOS configuration
-    nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
-      # ...
-      environment.systemPackages = [
-        amp.packages.${system}.ampd
-      ];
-    };
-
-    # Or home-manager configuration
-    home.packages = [
-      amp.packages.${system}.ampd
-    ];
-  };
-}
-```
-
-Note: Nix handles version management, so `ampup` is not needed for Nix users.
-
-### Building from Source (Manual)
-
-If you prefer to build manually without using `ampup`:
-
-```sh
-cargo build --release -p ampd
-```
-
-The binary will be available at `target/release/ampd`.
-
-### Python Quickstart
-
-The python client and connectors have moved to https://github.com/edgeandnode/amp-python. Head over there to get started querying and exploring data in an interactive python notebook or using the connectors to load data to your other datastores.
-
-## Components
-
-See [config.md](docs/config.md) for how to configure amp.
+Verified on Linux (Arch/Manjaro), June 2026.
 
 ### Prerequisites
 
-To run Amp, you will need a PostgreSQL metadata database. You can start one with `docker-compose`:
+| Tool | Why | Arch/Manjaro | Debian/Ubuntu |
+|------|-----|--------------|---------------|
+| Rust **1.91.0** | pinned by `rust-toolchain.toml` (auto-installed by rustup) | `rustup` | `rustup` |
+| `protoc` | tonic/prost gRPC codegen | `pacman -S protobuf` | `apt install protobuf-compiler` |
+| `cmake` | builds `snmalloc-sys` (default allocator) | `pacman -S cmake` | `apt install cmake` |
+| `pkg-config`, C/C++ toolchain | native deps | `pacman -S pkgconf base-devel` | `apt install pkg-config build-essential` |
+| `git` | build stamps the commit via `vergen` | (system) | (system) |
 
+### Build
+
+```sh
+# rustup picks up the pinned 1.91.0 toolchain automatically
+cargo build --release -p ampd -p ampctl
+
+# binaries land in target/release/
+./target/release/ampd --version      # e.g. "ampd v0.1.0"
 ```
-docker-compose up -d
+
+To build without the bundled snmalloc allocator (skips the `cmake` requirement,
+uses the system allocator — functionally identical):
+
+```sh
+cargo build --release -p ampd -p ampctl --no-default-features
 ```
 
-This will run the metadata DB at `postgresql://postgres:postgres@localhost:5432/amp`.
-Update your config file to include it:
+A Nix flake is also provided (`flake.nix`): `nix build .#ampd`.
 
-```toml
-metadata_db_url = "postgresql://postgres:postgres@localhost:5432/amp"
-```
+## Running
 
-### ampd server
+`ampd` is configured by a single TOML file (passed via `--config` or the
+`AMP_CONFIG` env var) that points at a PostgreSQL metadata DB, a data directory
+for Parquet output, a providers directory, and a manifests directory. A local
+Postgres for development can be started with `docker-compose up -d`.
 
-To run, just `cargo run -p ampd -- server`.
+### Commands
 
-This starts both a JSON Lines over HTTP server and an Arrow Flight (gRPC) server.
-The HTTP server is straightforward, send it a query and get results, one row per line:
+| Command | Purpose |
+|---------|---------|
+| `ampd dev` | All-in-one: Flight + JSON Lines + Admin servers in one process (the single-box mode). Flags: `--flight-server`, `--jsonl-server`, `--admin-server` (all on if none given). |
+| `ampd server` | Query servers only (`--flight-server`, `--jsonl-server`). |
+| `ampd controller` | Controller + Admin API. |
+| `ampd worker --node-id <id>` | Distributed extraction worker. |
+| `ampd migrate` | Run metadata-DB migrations. |
 
-```
+Default ports (overridable in config): Arrow Flight `1602`, JSON Lines HTTP
+`1603`, Admin API `1610`.
+
+The JSON Lines server takes a raw SQL body and streams one JSON row per line:
+
+```sh
 curl -X POST http://localhost:1603 --data 'select * from "my_namespace/eth_rpc".logs limit 10'
 ```
 
-The Arrow Flight server requires a specialized client. We currently have a Python client,
-see docs for that [here](https://github.com/edgeandnode/amp/tree/main/python).
+`ampctl` manages the engine: `ampctl {manifest,provider,job,dataset,worker}`.
+See `ampctl --help`.
 
-> **Note:**
->
-> - When streaming data from the `jsonl` server, responses are always sent in uncompressed format, regardless of any `accept-encoding` headers (such as `gzip`, `br`, or `deflate`).
-> - For non-streaming requests, responses will be compressed according to the `accept-encoding` header, if specified.
+## Versioning
 
-### Telemetry
-
-Amp has an OpenTelemetry setup to track various metrics and traces. For local testing, a Grafana telemetry stack
-is already configured and can be run through `docker-compose`:
-
-```
-docker-compose up -d
-```
-
-This will (among other things) run the `grafana/otel-lgmt` image. More info about the image can be found [here](https://github.com/grafana/docker-otel-lgtm/).
-
-More detailed instructions regarding telemetry can be found in [here](./docs/telemetry.md).
+This fork is versioned **independently of upstream Amp.** `v0.1.0` is the first
+release cut from the cargopete fork (the Dec-2025 `a1937bf` baseline). The
+running binary's version string comes from `git describe`, so a build at a
+tagged commit reports that tag (e.g. `ampd v0.1.0`); an untagged build reports
+the short commit hash.
 
 ## License
 
-See [LICENSE](LICENSE) file for details.
+This work is licensed under the **Business Source License 1.1**. See
+[LICENSE](LICENSE).
+
+- **Licensor:** Edge & Node Ventures, Inc.
+- **Change Date:** three years from publication of each version → **Apache 2.0**.
+- **Additional Use Grant:** production use is permitted *provided it does not
+  compete* with Edge & Node Ventures' offerings of the Licensed Work. Per the
+  grant, a product offered to third parties **not on a paid basis**, or that does
+  not significantly overlap with their offering, **is not competitive.** camp is
+  a free, no-key public service → its production use is permitted under this
+  grant, for as long as it stays free.
+
+BUSL grants no trademark rights. This fork is not affiliated with Edge & Node
+Ventures or The Graph.

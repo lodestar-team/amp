@@ -1,14 +1,15 @@
-# amp (cargopete fork)
+# amp (lodestar-team fork)
 
 A self-built fork of [Amp](https://thegraph.com/) — the blockchain-native
-database — maintained so that [engine.camp](https://engine.camp) builds and runs
-its indexing engine from source rather than from a prebuilt binary.
+database — maintained at [`lodestar-team/amp`](https://github.com/lodestar-team/amp)
+so that [engine.camp](https://engine.camp) builds and runs its indexing engine
+from source rather than from a prebuilt binary.
 
 > **What this is.** This repository is an independent fork of Edge & Node
 > Ventures' Amp, taken at commit `a1937bf` (2025-12-12). It is **not affiliated
 > with, sponsored by, or endorsed by Edge & Node Ventures or The Graph.** "Amp"
 > is their name; the executables here keep the names `ampd`/`ampctl`/`ampsync`
-> for drop-in compatibility, but this is the *cargopete fork*, versioned
+> for drop-in compatibility, but this is the *lodestar-team fork*, versioned
 > independently (see [Versioning](#versioning)). The Licensed Work remains under
 > the Business Source License 1.1 — see [License](#license).
 
